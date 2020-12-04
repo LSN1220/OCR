@@ -1,0 +1,85 @@
+import os
+
+root_dir = os.path.join(os.path.abspath(
+    os.path.dirname(__file__)
+).split('east')[0], 'east')
+
+# data_config
+train_task_id = '3T736'
+data_dir = 'D:/GIT/github/data/icpr_text/train_1000/'
+origin_image_dir_name = 'image_1000/'
+origin_txt_dir_name = 'txt_1000/'
+train_image_dir_name = 'images_%s/' % train_task_id
+train_label_dir_name = 'labels_%s/' % train_task_id
+show_gt_image_dir_name = 'show_gt_images_%s/' % train_task_id
+show_act_image_dir_name = 'show_act_images_%s/' % train_task_id
+gen_origin_img = True
+draw_gt_quad = True
+draw_act_quad = True
+train_fname = 'train_%s.txt' % train_task_id
+val_fname = 'val_%s.txt' % train_task_id
+# in paper it's 0.3, maybe to large to this problem
+shrink_ratio = 0.2
+# pixels between 0.2 and 0.6 are side pixels
+shrink_side_ratio = 0.6
+
+# training_config
+initial_epoch = 0
+epoch_num = 25
+lr = 1e-3
+decay = 5e-4
+patience = 5
+load_weights = False
+
+
+total_img = 10000
+validation_split_ratio = 0.1
+max_train_img_size = int(train_task_id[-3:])
+max_predict_img_size = 2048  # int(train_task_id[-3:])
+assert max_train_img_size in [256, 384, 512, 640, 736], \
+    'max_train_img_size must in [256, 384, 512, 640, 736]'
+if max_train_img_size == 256:
+    batch_size = 8
+elif max_train_img_size == 384:
+    batch_size = 4
+elif max_train_img_size == 512:
+    batch_size = 2
+else:
+    batch_size = 1
+steps_per_epoch = total_img * (1 - validation_split_ratio) // batch_size
+# steps_per_epoch = 1
+validation_steps = total_img * validation_split_ratio // batch_size
+# validation_steps = 1
+
+# losses_config
+epsilon = 1e-4
+lambda_inside_score_loss = 4.0
+lambda_side_vertex_code_loss = 1.0
+lambda_side_vertex_coord_loss = 1.0
+
+num_channels = 3
+feature_layers_range = range(5, 1, -1)
+# feature_layers_range = range(3, 0, -1)
+feature_layers_num = len(feature_layers_range)
+# pixel_size = 4
+pixel_size = 2 ** feature_layers_range[-1]
+locked_layers = False
+
+# if not os.path.exists('model'):
+#     os.mkdir('model')
+# if not os.path.exists('saved_model'):
+#     os.mkdir('saved_model')
+
+root_path = os.path.join(os.path.abspath(os.path.dirname(__file__)).split('ocr')[0], 'ocr')
+model_weights_path = os.path.join(root_path,
+                                  'text_detect/east/pre_model/weights_%s.{epoch:03d}-{val_loss:.3f}.h5' % train_task_id)
+# saved_model_file_path = os.path.join(root_path,
+#                                      'text_detect/east/pre_model/east_model_%s.h5' % train_task_id)
+saved_model_weights_file_path = os.path.join(root_path,
+                                     'text_detect/east/pre_model/east_model_weights_%s.h5' % train_task_id)
+
+pixel_threshold = 0.9
+side_vertex_pixel_threshold = 0.8
+trunc_threshold = 0.1
+predict_cut_text_line = False
+# predict_write2txt = True

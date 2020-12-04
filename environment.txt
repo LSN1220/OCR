@@ -1,0 +1,8 @@
+tensorflow-gpu==1.14.0
+Keras==2.1.6
+pip install torch==1.4.0+cpu torchvision==0.5.0+cpu -f https://download.pytorch.org/whl/torch_stable.html
+opencv-python==4.2.0.32
+tqdm
+Pillow==6.1.0
+matplotlib==3.1.1
+wand
