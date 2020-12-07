@@ -1,3 +1,4 @@
+.idea/
 venv/
 crnn_output/east/*.txt
 crnn_output/layout_analysis/*.txt
