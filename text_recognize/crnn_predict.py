@@ -6,7 +6,7 @@ import numpy as np
 import keras.backend as K
 from PIL import Image
 from math import *
-from text_recognize.net.network import predict, crnn_network, char
+from text_recognize.net.crnn_network import predict, crnn_network, char
 
 root_path = os.path.join(
     os.path.abspath(os.path.dirname(__file__)).split('ocr')[0], 'ocr')
@@ -82,6 +82,7 @@ def dumpRotateImage(img, rec):
     imgRotation = np.uint8(imgRotation)
     img_rot = Image.fromarray(imgRotation)
     img_rec = img_rot.crop((pt1_N[0], pt1_N[1], pt3_N[0], pt3_N[1]))
+    # img_rec = imgRotation[pt1_N[1]:pt3_N[1], pt1_N[0]:pt3_N[0]]
 
     return img_rec
 
@@ -119,7 +120,7 @@ def predict_text(model, recs_all, recs_len, img_all, img_name=None):
         width_list.append(w)
 
         # fixme 增强图像对比度 提高识别
-        img_in = np.array(img_rec)
+        img_in = np.array(img_rec).T
         img_out = np.zeros(img_in.shape, np.uint8)
         cv2.normalize(img_in, img_out, 255, 0, cv2.NORM_MINMAX, cv2.CV_8U)
 
@@ -137,10 +138,10 @@ def predict_text(model, recs_all, recs_len, img_all, img_name=None):
         # todo 根据顶点的线条比较反转
         black = 0
         for m in range(32):
-            if img_out[m, 0] < 100:
+            if img_out[0, m] < 100:
                 black += 1
         for n in range(64 if w >= 64 else w):
-            if img_out[0, n] < 100:
+            if img_out[n, 0] < 100:
                 black += 1
         if black > (32 + (64 if w >= 64 else w)) // 2:
             img_out = 255 - img_out
@@ -157,17 +158,17 @@ def predict_text(model, recs_all, recs_len, img_all, img_name=None):
         img_list.append(img_rec)
 
     width_max = max(width_list)
-    X = np.zeros((len(width_list), 32, width_max, 1), dtype=np.float)
+    X = np.zeros((len(width_list), width_max, 32, 1), dtype=np.float)
 
     for i in range(len(width_list)):
-        img_pad = np.zeros((32, width_max - width_list[i]), np.float32) + 0.5
-        img_rec = np.concatenate((img_list[i], img_pad), axis=1)
+        img_pad = np.zeros((width_max - width_list[i], 32), np.float32) + 0.5
+        img_rec = np.concatenate((img_list[i], img_pad), axis=0)
         X[i] = np.expand_dims(img_rec, axis=2)
 
         # fixme 保存裁剪后的图像
         if not img_name is None:
             img_out = (img_rec + 0.5) * 255
-            img_sa = Image.fromarray(img_out.astype(np.int32))
+            img_sa = Image.fromarray(img_out.T.astype(np.int32))
             img_sa.convert('L').save(root_recs + '/' + img_name + '_%d_.jpg' % i)
 
     y_pred = model.predict(X)
@@ -184,13 +185,15 @@ def predict_text(model, recs_all, recs_len, img_all, img_name=None):
 
 
 if __name__ == '__main__':
-    model, basemodel, _, _ = crnn_network()
+    model, basemodel, _, _ = crnn_network(32, 4400, 0.02)
 
-    if os.path.exists(pre_model_weight):
-        basemodel.load_weights(pre_model_weight)
+    # if os.path.exists(pre_model_weight):
+    #     basemodel.load_weights(pre_model_weight)
 
     files = sorted(os.listdir(root_recs))
     for file in files:
+        if file.endswith('.gitkeep'):
+            continue
         t = time.time()
         image_path = os.path.join(root_recs, file)
         print("ocr image is %s" % image_path)

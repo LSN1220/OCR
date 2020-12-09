@@ -12,11 +12,15 @@ pixel_anchor_output/*.jpg
 recs/*.jpg
 sample/*.pdf
 text_detect/east/pre_model/*.h5
-text_detect/pixel_anchor/pre_model/*.pth
+text_detect/east/job_east_1208/
+text_detect/pixel_anchor/pre_model
+/*.pth
 text_recognize/*.txt
 text_recognize/data/temp/*.jpeg
 text_recognize/job_random_jp/
+text_recognize/job_crnn_1208/
 text_recognize/pre_model/
 *__pycache__/
+
 
 

@@ -1,22 +1,27 @@
 import os
+import sys
 import numpy as np
 from keras.preprocessing import image
 from keras.applications.vgg16 import preprocess_input
-from text_detect.east import cfg
+sys.path.append('..')
+import east_config as cfg
 
 
-def gen(batch_size=cfg.batch_size, is_val=False):
-    img_h, img_w = cfg.max_train_img_size, cfg.max_train_img_size
-    x = np.zeros((batch_size, img_h, img_w, cfg.num_channels), dtype=np.float32)
-    pixel_num_h = img_h // cfg.pixel_size   # fixme 以4*4个像素点为一格 预测值score
-    pixel_num_w = img_w // cfg.pixel_size
+def gen(max_img_h, max_img_w, downsample_factor, batch_size, is_val=False):
+    img_h, img_w = max_img_h, max_img_w
+    x = np.zeros((batch_size, img_h, img_w, 3), dtype=np.float32)
+    pixel_num_h = img_h // downsample_factor   # fixme 以4*4个像素点为一格 预测值score
+    pixel_num_w = img_w // downsample_factor
     y = np.zeros((batch_size, pixel_num_h, pixel_num_w, 7), dtype=np.float32)
     if is_val:
         with open(os.path.join(cfg.data_dir, cfg.val_fname), 'r') as f_val:
             f_list = f_val.readlines()
+            num_data = len(f_list)
     else:
         with open(os.path.join(cfg.data_dir, cfg.train_fname), 'r') as f_train:
             f_list = f_train.readlines()
+            num_data = len(f_list)
+
     while True:
         for i in range(batch_size):
             # random gen an image name

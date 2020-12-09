@@ -1,27 +1,18 @@
 import os
+import sys
 from tqdm import tqdm
 import random
 import numpy as np
 from PIL import Image, ImageDraw
 import xml.etree.ElementTree as ET
+sys.path.append('..')
+import east_config as cfg
 
-data_dir = 'D:/GIT/github/data/Contract_data'
-
-train_task_id = '1'
-train_image_dir_name = 'images_%s/' % train_task_id
-train_label_dir_name = 'labels_%s/' % train_task_id
-max_train_img_height = 1088  # 17 * 64
-max_train_img_width = 768  # 12 * 64
-pixel_size = 4
 epsilon = 1e-4
-gen_resize_img = True
-shrink_ratio = 0.2
-shrink_side_ratio = 0.6
-tr_val_ratio = 0.1
 
 
-def shrink(xy_list, ratio=shrink_ratio):  # shrink_ratio = 0.2
-    if ratio == 0.0:
+def shrink(xy_list, shrink_ratio=0.2):  # shrink_ratio = 0.2
+    if shrink_ratio == 0.0:
         return xy_list, xy_list
     diff_1to3 = xy_list[:3, :] - xy_list[1:4, :]
     diff_4 = xy_list[3:4, :] - xy_list[0:1, :]
@@ -38,17 +29,17 @@ def shrink(xy_list, ratio=shrink_ratio):  # shrink_ratio = 0.2
     theta = np.arctan(diff_abs[:, 1] / diff_abs[:, 0])
     # shrink two long edges
     temp_new_xy_list = np.copy(xy_list)
-    shrink_edge(xy_list, temp_new_xy_list, long_edge, r, theta, ratio)
-    shrink_edge(xy_list, temp_new_xy_list, long_edge + 2, r, theta, ratio)
+    shrink_edge(xy_list, temp_new_xy_list, long_edge, r, theta, shrink_ratio)
+    shrink_edge(xy_list, temp_new_xy_list, long_edge + 2, r, theta, shrink_ratio)
     # shrink two short edges
     new_xy_list = np.copy(temp_new_xy_list)
-    shrink_edge(temp_new_xy_list, new_xy_list, short_edge, r, theta, ratio)
-    shrink_edge(temp_new_xy_list, new_xy_list, short_edge + 2, r, theta, ratio)
+    shrink_edge(temp_new_xy_list, new_xy_list, short_edge, r, theta, shrink_ratio)
+    shrink_edge(temp_new_xy_list, new_xy_list, short_edge + 2, r, theta, shrink_ratio)
     return temp_new_xy_list, new_xy_list, long_edge
 
 
-def shrink_edge(xy_list, new_xy_list, edge, r, theta, ratio=shrink_ratio):
-    if ratio == 0.0:
+def shrink_edge(xy_list, new_xy_list, edge, r, theta, shrink_ratio=0.2):
+    if shrink_ratio == 0.0:
         return
     start_point = edge
     end_point = (edge + 1) % 4
@@ -56,21 +47,21 @@ def shrink_edge(xy_list, new_xy_list, edge, r, theta, ratio=shrink_ratio):
         xy_list[end_point, 0] - xy_list[start_point, 0])
     new_xy_list[start_point, 0] = \
         xy_list[start_point, 0] + \
-        long_start_sign_x * ratio * r[start_point] * np.cos(theta[start_point])
+        long_start_sign_x * shrink_ratio * r[start_point] * np.cos(theta[start_point])
     long_start_sign_y = np.sign(
         xy_list[end_point, 1] - xy_list[start_point, 1])
     new_xy_list[start_point, 1] = \
         xy_list[start_point, 1] + \
-        long_start_sign_y * ratio * r[start_point] * np.sin(theta[start_point])
+        long_start_sign_y * shrink_ratio * r[start_point] * np.sin(theta[start_point])
     # long edge one, end point
     long_end_sign_x = -1 * long_start_sign_x
     new_xy_list[end_point, 0] = \
         xy_list[end_point, 0] + \
-        long_end_sign_x * ratio * r[end_point] * np.cos(theta[start_point])
+        long_end_sign_x * shrink_ratio * r[end_point] * np.cos(theta[start_point])
     long_end_sign_y = -1 * long_start_sign_y
     new_xy_list[end_point, 1] = \
         xy_list[end_point, 1] + \
-        long_end_sign_y * ratio * r[end_point] * np.sin(theta[start_point])
+        long_end_sign_y * shrink_ratio * r[end_point] * np.sin(theta[start_point])
 
 
 def point_inside_of_quad(px, py, quad_xy_list, p_min, p_max):
@@ -166,9 +157,17 @@ def reorder_vertexes(xy_list):
 
 
 def preprocess():
-    origin_file_path = os.path.join(data_dir, 'images')
-    train_image_dir = os.path.join(data_dir, train_image_dir_name)
-    train_label_dir = os.path.join(data_dir, train_label_dir_name)
+    max_train_img_size = cfg.max_train_img_size
+    max_train_img_h = 0
+    max_train_img_w = 0
+    if isinstance(max_train_img_size, int):
+        max_train_img_h, max_train_img_w = max_train_img_size, max_train_img_size
+    elif isinstance(max_train_img_size, tuple):
+        max_train_img_h, max_train_img_w = max_train_img_size
+
+    origin_file_path = os.path.join(cfg.data_dir, cfg.origin_image_dir_name)
+    train_image_dir = os.path.join(cfg.data_dir, cfg.train_image_dir_name)
+    train_label_dir = os.path.join(cfg.data_dir, cfg.train_label_dir_name)
     if not os.path.exists(train_image_dir):
         os.mkdir(train_image_dir)
     if not os.path.exists(train_label_dir):
@@ -190,7 +189,7 @@ def preprocess():
         if os.path.exists(os.path.join(train_label_dir, image_name[:-4] + '_gt.npy')):
             continue
         with Image.open(image_path) as im:
-            d_wight, d_height = max_train_img_width, max_train_img_height
+            d_wight, d_height = max_train_img_w, max_train_img_h
             scale_ratio_w = d_wight / width
             scale_ratio_h = d_height / height
             im = im.resize((d_wight, d_height), Image.CUBIC).convert('RGB')
@@ -202,7 +201,7 @@ def preprocess():
             # draw = ImageDraw.Draw(show_gt_im)
             texts = root_node.findall("text")
             xy_list_array = np.zeros((len(texts), 4, 2))
-            gt = np.zeros((d_height // pixel_size, d_wight // pixel_size, 7))
+            gt = np.zeros((d_height // cfg.downsample_factor, d_wight // cfg.downsample_factor, 7))
             for ind, text in enumerate(texts):
                 y = int(text.attrib['top'])
                 x = int(text.attrib['left'])
@@ -217,8 +216,8 @@ def preprocess():
                 xy_list_array[ind] = xy_list
                 # 训练标签
                 # 缩小文本框
-                _, shrink_xy_list, _ = shrink(xy_list, shrink_ratio)  # shrink_ratio = 0.2
-                shrink_1, _, long_edge = shrink(xy_list, shrink_side_ratio)  # shrink_side_ratio = 0.6
+                _, shrink_xy_list, _ = shrink(xy_list, shrink_ratio=0.2)  # shrink_ratio = 0.2
+                shrink_1, _, long_edge = shrink(xy_list, shrink_ratio=0.6)  # shrink_side_ratio = 0.6
                 #
                 # draw.line([tuple(xy_list[0]), tuple(xy_list[1]),
                 #            tuple(xy_list[2]), tuple(xy_list[3]),
@@ -244,17 +243,17 @@ def preprocess():
                 # 计算像素采样范围
                 p_min = np.amin(shrink_xy_list, axis=0)
                 p_max = np.amax(shrink_xy_list, axis=0)
-                ji_min = (p_min / pixel_size - 0.5).astype(int) - 1
-                ji_max = (p_max / pixel_size - 0.5).astype(int) + 3
+                ji_min = (p_min / cfg.downsample_factor - 0.5).astype(int) - 1
+                ji_max = (p_max / cfg.downsample_factor - 0.5).astype(int) + 3
                 imin = np.maximum(0, ji_min[1])
-                imax = np.minimum(d_height // pixel_size, ji_max[1])
+                imax = np.minimum(d_height // cfg.downsample_factor, ji_max[1])
                 jmin = np.maximum(0, ji_min[0])
-                jmax = np.minimum(d_wight // pixel_size, ji_max[0])
+                jmax = np.minimum(d_wight // cfg.downsample_factor, ji_max[0])
                 # 对每个在文本框内的像素打标签
                 for i in range(imin, imax):
                     for j in range(jmin, jmax):
-                        px = (j + 0.5) * pixel_size
-                        py = (i + 0.5) * pixel_size
+                        px = (j + 0.5) * cfg.downsample_factor
+                        py = (i + 0.5) * cfg.downsample_factor
                         if point_inside_of_quad(px, py, shrink_xy_list, p_min, p_max):
                             gt[i, j, 0] = 1
                             # line_width, line_color = 1, 'red'
@@ -286,8 +285,7 @@ def preprocess():
                             #             py - 0.5 * pixel_size)],
                             #           width=line_width, fill=line_color)
         # show_gt_im.show()
-        if gen_resize_img:
-            im.save(os.path.join(train_image_dir, image_name))
+        im.save(os.path.join(train_image_dir, image_name))
         # np.save(os.path.join(train_label_dir, image_name[:-4] + '.npy'),
         #         xy_list_array)
         np.save(os.path.join(train_label_dir, image_name[:-4] + '_gt.npy'),
@@ -296,10 +294,10 @@ def preprocess():
                                               d_wight,
                                               d_height))
     random.shuffle(tr_val_set)
-    val_num = int(tr_val_ratio * len(tr_val_set))
-    with open(os.path.join(data_dir, 'val.txt'), 'w') as f_val:
+    val_num = int(cfg.valid_split_ratio * len(tr_val_set))
+    with open(os.path.join(cfg.data_dir, 'val.txt'), 'w') as f_val:
         f_val.writelines(tr_val_set[:val_num])
-    with open(os.path.join(data_dir, 'train.txt'), 'w') as f_tr:
+    with open(os.path.join(cfg.data_dir, 'train.txt'), 'w') as f_tr:
         f_tr.writelines(tr_val_set[val_num:])
 
 

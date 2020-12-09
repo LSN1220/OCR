@@ -1,14 +1,18 @@
 # -*- coding: utf-8 -*-
+import sys
 from keras import Input, Model
 from keras.applications.vgg16 import VGG16
 from keras.layers import Concatenate, Conv2D, UpSampling2D, BatchNormalization
-from text_detect.east import cfg
+from keras.optimizers import Adam
+sys.path.append("..")
+import east_config as cfg
+from net.losses import quad_loss
 
 
 class East:
     def __init__(self):
         self.input_img = Input(name='input_img',
-                               shape=(None, None, cfg.num_channels),
+                               shape=(None, None, 3),
                                dtype='float32')
 
         vgg16 = VGG16(input_tensor=self.input_img,
@@ -70,10 +74,16 @@ class East:
                                   name='east_detect')([inside_score,
                                                        side_v_code,
                                                        side_v_coord])
-        return Model(inputs=self.input_img, outputs=east_detect)
+        return Model(inputs=self.input_img, outputs=east_detect), self.input_img, east_detect
+
+
+def east_network():
+    east = East()
+    model, input, y_pred = east.east_network()
+    model.summary()
+    model.compile(loss=quad_loss, optimizer=Adam(lr=cfg.lr, decay=5e-4))
+    return model, input, y_pred
 
 
 if __name__ == '__main__':
-    east = East()
-    east_network = east.east_network()
-    east_network.summary()
+    east_network()

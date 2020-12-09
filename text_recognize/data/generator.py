@@ -1,11 +1,13 @@
 # -*- coding: utf-8 -*-
 import os
-import re
+import sys
 import threading
-import random
 import numpy as np
 from keras import backend as K
 from keras.callbacks import Callback
+sys.path.append("..")
+import crnn_config as cfg
+from utils import paint_text
 
 lock = threading.Lock()
 
@@ -42,11 +44,10 @@ def text_to_labels(text, unichar_list):
 
 
 class TextImageGenerator(Callback):
-    def __init__(self, config, batch_size,
+    def __init__(self, batch_size,
                  img_w, img_h, downsample_factor, val_split,
                  absolute_max_string_len=128):
         self.build_id = 0
-        self.config = config
         self.batch_size = batch_size
         self.img_w = img_w
         self.img_h = img_h
@@ -55,7 +56,7 @@ class TextImageGenerator(Callback):
         self.absolute_max_string_len = absolute_max_string_len
         self.n_class = 0
         self.chars = []
-        with open(config.uni_chars_file, 'r', encoding='utf-8') as f:
+        with open(cfg.uni_chars_file, 'r', encoding='utf-8') as f:
             for line in f:
                 # 空格在最后一位
                 char = line.replace('\n', '').replace('\r', '')
@@ -64,25 +65,6 @@ class TextImageGenerator(Callback):
 
     def get_output_size(self):
         return len(self.chars) + 1
-
-    # def random_price_word(self):
-    #     word = np.random.choice(self.config.intax_prefix)
-    #     word += np.random.choice(self.config.price_prefix)
-    #     if random.randint(0, 1):
-    #         word += "{:,}".format(random.randint(1000, 10000))
-    #     else:
-    #         word += "{:,}".format(random.randint(1, 1000))
-    #     word += np.random.choice(self.config.price_surfix)
-    #     return word
-
-    # def random_capacity_word(self):
-    #     word = random_capacity()
-    #     word += np.random.choice(self.config.capacity_surfix)
-    #     if np.random.choice([True, False]):
-    #         word += np.random.choice(self.config.capacity_connect)
-    #         word += random_capacity()
-    #         word += np.random.choice(self.config.capacity_surfix)
-    #     return word
 
     def random_text(self, word_len_list, dict_index):
         """
@@ -239,25 +221,25 @@ class TextImageGenerator(Callback):
 
     def on_train_begin(self, logs=None):
         self.build_word_list(0, 32000, 16)
-        self.paint_func = lambda text: self.config.paint_text(
+        self.paint_func = lambda text: paint_text(
             text, self.img_w, self.img_h)
 
     def on_epoch_begin(self, epoch, logs=None):
-        if (epoch >= 30) and (epoch < 60) and self.build_id != 1:
+        if (epoch >= 30) and self.build_id != 1:  # and (epoch < 60)
             self.build_word_list(1, 64000, 16)
-        if (epoch >= 60) and (epoch < 120) and self.build_id != 2:
-            self.build_word_list(2, 128000, 32, 1)
-        if (epoch >= 120) and (epoch < 160) and self.build_id != 3:
-            self.build_word_list(3, 256000, 16, 1)
-        if (epoch >= 160) and (epoch < 250) and self.build_id != 4:
-            self.build_word_list(4, 256000, 32, 2)
-        if (epoch >= 250) and (epoch < 300) and self.build_id != 5:
-            self.build_word_list(5, 256000, 16, 2)
-        if (epoch >= 300) and (epoch < 400) and self.build_id != 6:
-            self.build_word_list(6, 256000, 32, 1)
-        if (epoch >= 400) and (epoch < 500) and self.build_id != 7:
-            self.build_word_list(7, 256000, 16, 1)
-        if (epoch >= 500) and (epoch < 700) and self.build_id != 8:
-            self.build_word_list(8, 256000, 32, 2)
-        if (epoch >= 700) and self.build_id != 9:
-            self.build_word_list(9, 256000, 32, 1)
+        # if (epoch >= 60) and (epoch < 120) and self.build_id != 2:
+        #     self.build_word_list(2, 128000, 32, 1)
+        # if (epoch >= 120) and (epoch < 160) and self.build_id != 3:
+        #     self.build_word_list(3, 256000, 16, 1)
+        # if (epoch >= 160) and (epoch < 250) and self.build_id != 4:
+        #     self.build_word_list(4, 256000, 32, 2)
+        # if (epoch >= 250) and (epoch < 300) and self.build_id != 5:
+        #     self.build_word_list(5, 256000, 16, 2)
+        # if (epoch >= 300) and (epoch < 400) and self.build_id != 6:
+        #     self.build_word_list(6, 256000, 32, 1)
+        # if (epoch >= 400) and (epoch < 500) and self.build_id != 7:
+        #     self.build_word_list(7, 256000, 16, 1)
+        # if (epoch >= 500) and (epoch < 700) and self.build_id != 8:
+        #     self.build_word_list(8, 256000, 32, 2)
+        # if (epoch >= 700) and self.build_id != 9:
+        #     self.build_word_list(9, 256000, 32, 1)

@@ -1,51 +1,30 @@
 # -*- coding: utf-8 -*-
 import os
 import numpy as np
-import cv2
 from PIL import ImageDraw
 import PIL.Image as PI
 from wand.image import Image, Color
+import tensorflow as tf
+import keras.backend as K
 from keras.preprocessing import image
 from keras.applications.vgg16 import preprocess_input
-from text_detect.east import cfg
-from text_detect.east.data.label import point_inside_of_quad
-from text_detect.east.net.network import East
-from text_detect.east.data.preprocess import resize_image
-from text_detect.east.net.nms import nms
-
-root_path = os.path.join(os.path.abspath(os.path.dirname(__file__)).split('ocr')[0], 'ocr')
-# ----get_sample----
-sample_dir = os.path.join(root_path, 'sample/')
-sample_list = os.listdir(sample_dir)
-# ----output_save----
-image_save_path = os.path.join(root_path, 'east_output/')
-if not os.path.exists(image_save_path):
-    os.mkdir(image_save_path)
-# ----pre_model----
-pre_model_weight = os.path.join(root_path, 'text_detect/east/pre_model/east_model_weights.h5')
+import east_config as cfg
+from net.east_network import east_network
+from net.nms import nms
 
 
 def sigmoid(x):
     return 1 / (1 + np.exp(-x))
 
 
-def cut_text_line(geo, scale_ratio_w, scale_ratio_h, im_array, img_name, s):
-    geo /= [scale_ratio_w, scale_ratio_h]
-    p_min = np.amin(geo, axis=0)
-    p_max = np.amax(geo, axis=0)
-    min_xy = p_min.astype(int)
-    max_xy = p_max.astype(int) + 2
-    sub_im_arr = im_array[min_xy[1]:max_xy[1], min_xy[0]:max_xy[0], :].copy()
-    for m in range(min_xy[1], max_xy[1]):
-        for n in range(min_xy[0], max_xy[0]):
-            if not point_inside_of_quad(n, m, geo, p_min, p_max):
-                sub_im_arr[m - min_xy[1], n - min_xy[0], :] = 255
-    sub_im = image.array_to_img(sub_im_arr, scale=False)
-    sub_im.save(img_name + '_subim%d.jpg' % s)
-
-
 def predict_quad(model, img, pixel_threshold=0.9, quiet=False, img_name=None):
-    d_wight, d_height = resize_image(img, cfg.max_predict_img_size)
+    max_train_img_size = cfg.max_pred_img_size
+    max_train_img_h, max_train_img_w = 0, 0
+    if isinstance(max_train_img_size, int):
+        max_train_img_h, max_train_img_w = max_train_img_size, max_train_img_size
+    elif isinstance(max_train_img_size, tuple):
+        max_train_img_h, max_train_img_w = max_train_img_size
+    d_wight, d_height = max_train_img_w, max_train_img_h
     img = img.resize((d_wight, d_height), PI.BILINEAR).convert('RGB')
     img = image.img_to_array(img)
 
@@ -73,8 +52,6 @@ def predict_quad(model, img, pixel_threshold=0.9, quiet=False, img_name=None):
         text_recs = []
         x[n] = np.uint8(x[n])
         with image.array_to_img(img_all[n]) as im:
-            im_array = x[n]
-
             # fixme 注意：拿去CRNN识别的是缩放后的图像
             scale_ratio_w = 1
             scale_ratio_h = 1
@@ -82,21 +59,21 @@ def predict_quad(model, img, pixel_threshold=0.9, quiet=False, img_name=None):
             quad_im = im.copy()
             draw = ImageDraw.Draw(im)
             for i, j in zip(activation_pixels[0], activation_pixels[1]):
-                px = (j + 0.5) * cfg.pixel_size
-                py = (i + 0.5) * cfg.pixel_size
+                px = (j + 0.5) * cfg.downsample_factor
+                py = (i + 0.5) * cfg.downsample_factor
                 line_width, line_color = 1, 'blue'
                 if y[i, j, 1] >= cfg.side_vertex_pixel_threshold:
                     if y[i, j, 2] < cfg.trunc_threshold:
                         line_width, line_color = 2, 'yellow'
                     elif y[i, j, 2] >= 1 - cfg.trunc_threshold:
                         line_width, line_color = 2, 'green'
-                draw.line([(px - 0.5 * cfg.pixel_size, py - 0.5 * cfg.pixel_size),
-                           (px + 0.5 * cfg.pixel_size, py - 0.5 * cfg.pixel_size),
-                           (px + 0.5 * cfg.pixel_size, py + 0.5 * cfg.pixel_size),
-                           (px - 0.5 * cfg.pixel_size, py + 0.5 * cfg.pixel_size),
-                           (px - 0.5 * cfg.pixel_size, py - 0.5 * cfg.pixel_size)],
+                draw.line([(px - 0.5 * cfg.downsample_factor, py - 0.5 * cfg.downsample_factor),
+                           (px + 0.5 * cfg.downsample_factor, py - 0.5 * cfg.downsample_factor),
+                           (px + 0.5 * cfg.downsample_factor, py + 0.5 * cfg.downsample_factor),
+                           (px - 0.5 * cfg.downsample_factor, py + 0.5 * cfg.downsample_factor),
+                           (px - 0.5 * cfg.downsample_factor, py - 0.5 * cfg.downsample_factor)],
                           width=line_width, fill=line_color)
-            if not img_name is None:
+            if img_name:
                 im.save(image_save_path + 'quad/' + img_name + '_%d_.jpg' % n)
 
             quad_draw = ImageDraw.Draw(quad_im)
@@ -109,17 +86,13 @@ def predict_quad(model, img, pixel_threshold=0.9, quiet=False, img_name=None):
                                     tuple(geo[3]),
                                     tuple(geo[0])], width=2, fill='blue')
 
-                    if cfg.predict_cut_text_line:
-                        cut_text_line(geo, scale_ratio_w, scale_ratio_h, im_array,
-                                      img_name, s)
-
                     rescaled_geo = geo / [scale_ratio_w, scale_ratio_h]
                     text_rec = np.reshape(rescaled_geo, (8,)).tolist()
                     text_recs.append(text_rec)
                 elif not quiet:
                     print('quad invalid with vertex num less then 4.')
 
-            if not img_name is None:
+            if img_name:
                 quad_im.save(image_save_path + 'predict/' + img_name + '_%d_.jpg' % n)
 
         for t in range(len(text_recs)):
@@ -131,18 +104,31 @@ def predict_quad(model, img, pixel_threshold=0.9, quiet=False, img_name=None):
 
 
 if __name__ == '__main__':
-    # ----get_model----
-    east = East()
-    east_detect = east.east_network()
-    east_detect.load_weights(pre_model_weight)
-    for i, sample in enumerate(sample_list):
-        img_path = os.path.join(sample_dir, sample)
-        if sample[-4:] == '.pdf':
-            with Image(filename=img_path, resolution=(200, 200)) as img:
-                img.alpha_channel = False
-                img.background_color = Color('white')  # Set the background color
-                img = PI.fromarray(np.array(img), 'RGB')
-        else:
-            img = PI.open(img_path).convert('RGB')
-        print('-----------------传入图片的img.size:', img.size)
-        predict_quad(east_detect, img, pixel_threshold=0.9, img_name=sample)
+    root_path = os.path.join(os.path.abspath(os.path.dirname(__file__)).split('ocr')[0], 'ocr')
+    # ----get_sample----
+    sample_dir = os.path.join(root_path, 'sample/')
+    sample_list = os.listdir(sample_dir)
+    image_save_path = os.path.join(root_path, 'east_output/')
+    if not os.path.exists(image_save_path):
+        os.mkdir(image_save_path)
+    # ----pre_model----
+    pre_model_weight = os.path.join(root_path, 'text_detect/east/pre_model/east_model_weights_1.h5')
+
+    with tf.Session() as sess:
+        K.set_session(sess)
+        model, _, _ = east_network()
+        model.load_weights(os.path.abspath(pre_model_weight))
+        for i, sample in enumerate(sample_list):
+            img_path = os.path.join(sample_dir, sample)
+            if sample.endswith('.gitkeep'):
+                continue
+            if sample[-4:] == '.pdf':
+                with Image(filename=img_path, resolution=(200, 200)) as img:
+                    img.alpha_channel = False
+                    img.background_color = Color('white')  # Set the background color
+                    img = PI.fromarray(np.array(img), 'RGB')
+            else:
+                img = PI.open(img_path).convert('RGB')
+            print('-----------------传入图片的img.size:', img.size)
+            predict_quad(model, img, pixel_threshold=0.9, img_name=sample)
+    K.clear_session()

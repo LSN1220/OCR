@@ -1,5 +1,9 @@
+import sys
 import tensorflow as tf
-from text_detect.east import cfg
+sys.path.append("..")
+import east_config as cfg
+
+epsilon = 1e-4
 
 
 def quad_loss(y_true, y_pred):
@@ -12,8 +16,8 @@ def quad_loss(y_true, y_pred):
     predicts = tf.nn.sigmoid(logits)
     # log + epsilon for stable cal
     inside_score_loss = tf.reduce_mean(
-        -1 * (beta * labels * tf.log(predicts + cfg.epsilon) +
-              (1 - beta) * (1 - labels) * tf.log(1 - predicts + cfg.epsilon)))
+        -1 * (beta * labels * tf.log(predicts + epsilon) +
+              (1 - beta) * (1 - labels) * tf.log(1 - predicts + epsilon)))
     inside_score_loss *= cfg.lambda_inside_score_loss
 
     # loss for side_vertex_code
@@ -21,16 +25,16 @@ def quad_loss(y_true, y_pred):
     vertex_logits = y_pred[:, :, :, 1:3]
     vertex_labels = y_true[:, :, :, 1:3]
     vertex_beta = 1 - (tf.reduce_mean(y_true[:, :, :, 1:2])
-                       / (tf.reduce_mean(labels) + cfg.epsilon))
+                       / (tf.reduce_mean(labels) + epsilon))
     vertex_predicts = tf.nn.sigmoid(vertex_logits)
     pos = -1 * vertex_beta * vertex_labels * tf.log(vertex_predicts +
-                                                    cfg.epsilon)
+                                                    epsilon)
     neg = -1 * (1 - vertex_beta) * (1 - vertex_labels) * tf.log(
-        1 - vertex_predicts + cfg.epsilon)
+        1 - vertex_predicts + epsilon)
     positive_weights = tf.cast(tf.equal(y_true[:, :, :, 0], 1), tf.float32)
     side_vertex_code_loss = \
         tf.reduce_sum(tf.reduce_sum(pos + neg, axis=-1) * positive_weights) / (
-                tf.reduce_sum(positive_weights) + cfg.epsilon)
+                tf.reduce_sum(positive_weights) + epsilon)
     side_vertex_code_loss *= cfg.lambda_side_vertex_code_loss
 
     # loss for side_vertex_coord delta
@@ -41,7 +45,7 @@ def quad_loss(y_true, y_pred):
     vertex_weights = tf.cast(tf.equal(y_true[:, :, :, 1], 1), tf.float32)
     pixel_wise_smooth_l1norm = smooth_l1_loss(g_hat, g_true, vertex_weights)
     side_vertex_coord_loss = tf.reduce_sum(pixel_wise_smooth_l1norm) / (
-            tf.reduce_sum(vertex_weights) + cfg.epsilon)
+            tf.reduce_sum(vertex_weights) + epsilon)
     side_vertex_coord_loss *= cfg.lambda_side_vertex_coord_loss
     return inside_score_loss + side_vertex_code_loss + side_vertex_coord_loss
 
@@ -65,5 +69,5 @@ def quad_norm(g_true):
     square = tf.square(diff)
     distance = tf.sqrt(tf.reduce_sum(square, axis=-1))
     distance *= 4.0
-    distance += cfg.epsilon
+    distance += epsilon
     return tf.reshape(distance, shape[:-1])

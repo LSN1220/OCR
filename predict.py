@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
 import os
-from text_detect.east.net.network import East
+from text_detect.east.net.east_network import east_network
 from text_detect.east.east_predict import predict_quad
 from text_detect.layout_analysis.layout_analysis_predict import main
-from text_recognize.net.network import crnn_network
+from text_recognize.net.crnn_network import crnn_network
 from text_recognize.crnn_predict import predict_text
 from keras.preprocessing import image
 
@@ -12,19 +12,18 @@ import PIL.Image as PI
 from wand.image import Image, Color
 
 root_path = os.path.join(os.path.abspath(os.path.dirname(__file__)).split('ocr')[0], 'ocr')
-east_pre_model = os.path.join(root_path, 'text_detect/east/pre_model/east_model_weights.h5')
+east_pre_model = os.path.join(root_path, 'text_detect/east/pre_model/east_model_weights_1.h5')
 crnn_pre_model = os.path.join(root_path, 'text_recognize/pre_model/crnn_weights_50.hdf5')
 detect_method = 'layout_analysis'  # 'east', 'layout_analysis'
 
 if __name__ == '__main__':
     # todo east model predict
-    east = East()
-    east_model = east.east_network()
+    east_model, _, _ = east_network()
     east_model.load_weights(east_pre_model)
 
     # todo crnn model predict
-    model, crnn_model = crnn_network()
-    crnn_model.load_weights(crnn_pre_model)
+    model, crnn_model, _, _ = crnn_network(32, 4400, 0.02)
+    # crnn_model.load_weights(crnn_pre_model)
 
     sample_dir = os.path.join(root_path, 'sample/')
     sample_list = os.listdir(sample_dir)
@@ -37,6 +36,8 @@ if __name__ == '__main__':
     for i, sample in enumerate(sample_list):
         images = []
         img_path = os.path.join(sample_dir, sample)
+        if sample.endswith('.gitkeep'):
+            continue
         if sample[-4:] == '.pdf':
             with Image(filename=img_path, resolution=(200, 200)) as imgs:
                 num_page = len(imgs.sequence)

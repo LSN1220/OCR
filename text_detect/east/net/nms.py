@@ -1,6 +1,10 @@
 # coding=utf-8
+import sys
 import numpy as np
-from text_detect.east import cfg
+sys.path.append("..")
+import east_config as cfg
+
+epsilon = 1e-4
 
 
 def should_merge(region, i, j):
@@ -49,7 +53,9 @@ def rec_region_merge(region_list, m, S):
     return rows
 
 
-def nms(predict, activation_pixels, threshold=cfg.side_vertex_pixel_threshold):
+def nms(predict, activation_pixels,
+        side_vertex_pixel_threshold=cfg.side_vertex_pixel_threshold,
+        trunc_threshold=cfg.trunc_threshold):
     """
     :param predict:
     :param activation_pixels:
@@ -76,17 +82,17 @@ def nms(predict, activation_pixels, threshold=cfg.side_vertex_pixel_threshold):
         for row in group:
             for ij in region_list[row]:     # Fixme ij是set里的tuple(y,x)
                 score = predict[ij[0], ij[1], 1]
-                if score >= threshold:
+                if score >= side_vertex_pixel_threshold:
                     ith_score = predict[ij[0], ij[1], 2:3]
-                    if not (cfg.trunc_threshold <= ith_score < 1 -
-                            cfg.trunc_threshold):
+                    if not (trunc_threshold <= ith_score < 1 -
+                            trunc_threshold):
                         ith = int(np.around(ith_score))     # todo 四舍五入ith是0或1表示头和尾
                         total_score[ith * 2:(ith + 1) * 2] += score
-                        px = (ij[1] + 0.5) * cfg.pixel_size
-                        py = (ij[0] + 0.5) * cfg.pixel_size
+                        px = (ij[1] + 0.5) * cfg.downsample_factor
+                        py = (ij[0] + 0.5) * cfg.downsample_factor
                         p_v = [px, py] + np.reshape(predict[ij[0], ij[1], 3:7],
                                                     (2, 2))
                         quad_list[g_th, ith * 2:(ith + 1) * 2] += score * p_v
         score_list[g_th] = total_score[:, 0]
-        quad_list[g_th] /= (total_score + cfg.epsilon)
+        quad_list[g_th] /= (total_score + epsilon)
     return score_list, quad_list

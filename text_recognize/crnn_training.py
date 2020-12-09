@@ -7,55 +7,39 @@ import tensorflow as tf
 from keras import backend as K
 from keras.callbacks import ModelCheckpoint, ReduceLROnPlateau, TensorBoard, EarlyStopping
 from PIL import Image
-from utils import VizCallback, Config
-from net.network import crnn_network
+from utils import VizCallback
+from net.crnn_network import crnn_network
 from data.generator import TextImageGenerator
-
-# root_path = os.path.join(
-#     os.path.abspath(os.path.dirname(__file__)).split('ocr')[0], 'ocr')
-# save_weigths = os.path.join(root_path, 'text_recognize/model/crnn_weights-{epoch:02d}.hdf5')
-# save_tensorboard = os.path.join(root_path, 'text_recognize/model/log')
-# pre_train_weigths = ''
-# train_label_file = 'D:/GIT/github/data/my_crnn_data/jpn/train.txt'
-# test_label_file = 'D:/GIT/github/data/my_crnn_data/jpn/test.txt'
-# root_image_path = 'D:/GIT/github/data/my_crnn_data/jpn/'
+import crnn_config as cfg
 
 
-def train(config, start_epoch, stop_epoch, img_w, lr, batch_size=32, load_weight=None):
-    img_h = 64
+def train(start_epoch, stop_epoch, img_w, lr, batch_size=32, load_weight=None):
+    img_h = 32
     words_per_epoch = 16000
     val_split = 0.2
     val_words = int(words_per_epoch * val_split)
     downsample_factor = 4
 
-    input_shape = (img_w, img_h, 1)
-
-    img_gen = TextImageGenerator(config=config,
-                                 batch_size=batch_size,
+    img_gen = TextImageGenerator(batch_size=batch_size,
                                  img_w=img_w,
                                  img_h=img_h,
                                  downsample_factor=downsample_factor,
                                  val_split=words_per_epoch - val_words
                                  )
 
-    model, basemodel, input_data, y_pred = crnn_network(
-        input_shape,
-        img_gen.get_output_size(),
-        img_gen.absolute_max_string_len,
-        lr=lr
-    )
+    model, basemodel, input_data, y_pred = crnn_network(img_h, img_gen.get_output_size(), lr=lr)
     test_func = K.function([input_data], [y_pred])
 
-    viz_cb = VizCallback(config, test_func, img_gen.next_val(), img_gen.chars)
+    viz_cb = VizCallback(test_func, img_gen.next_val(), img_gen.chars)
 
-    tensorboard = TensorBoard(log_dir=os.path.join(config.job_output_path, 'logs'),
+    tensorboard = TensorBoard(log_dir=os.path.join(cfg.job_output_path, 'logs'),
                               histogram_freq=0, write_graph=True, embeddings_freq=0)
     early_stop = EarlyStopping(monitor='val_loss', min_delta=0,
                                patience=100, verbose=0, mode='auto')
     callbacks_list = [tensorboard, viz_cb, early_stop, img_gen]
 
     if start_epoch > 0:
-        weight_file = os.path.join(viz_cb.models_dir, 'crnn_ocr%04d.hdf5' % (start_epoch))
+        weight_file = os.path.join(viz_cb.models_dir, 'crnn_ocr-%04d.hdf5' % (start_epoch))
         model.load_weights(weight_file)
     elif load_weight is not None:
         weight_file = load_weight
@@ -109,11 +93,7 @@ if __name__ == "__main__":
                         help='default epochs is 1000')
     parse_args, unknown = parser.parse_known_args()
 
-    config = Config(parse_args.job_name,
-                    parse_args.job_dir,
-                    parse_args.train_datas,
-                    "train_by_fonts")
-    train(config, 0, parse_args.epochs, 512, parse_args.base_lr,
-          batch_size=32, load_weight=parse_args.load_weights)
+    train(0, parse_args.epochs, 256, parse_args.base_lr,
+          batch_size=64, load_weight=parse_args.load_weights)
 
     K.clear_session()

@@ -30,9 +30,8 @@ def ctc_lambda_func(args):
     return K.ctc_batch_cost(labels, y_pred, input_length, label_length)
 
 
-def crnn_network(input_shape, output_size,
-                 max_string_len, lr):
-    input = Input(shape=input_shape, name='the_input')
+def crnn_network(input_h, output_size, lr):
+    input = Input(shape=(None, input_h, 1), name='the_input')
     # CNN
     inner = Conv2D(64, (3, 3), padding='same', activation='relu', kernel_initializer='he_normal',
                    kernel_constraint=non_neg(), name='conv1')(input)
@@ -56,23 +55,23 @@ def crnn_network(input_shape, output_size,
     inner = Conv2D(512, (2, 2), padding='same', activation='relu', kernel_initializer='he_normal',
                    name='conv7')(inner)
     # m的输出维度为(h, w, c) -> (1, w/4, 512) 转换 (w, b, c) = (seq_len, batch, input_size)
-    # m = Permute((2, 1, 3), name='permute')(m)
-    # m = TimeDistributed(Flatten(), name='timedistrib')(m)
+    # m = Permute((2, 1, 3), name='permute')(inner)
+    m = TimeDistributed(Flatten(), name='timedistrib')(inner)
 
-    conv_to_rnn_dims = (input_shape[0] // 4, (input_shape[1] // 4) * 128)
-    inner = Reshape(target_shape=conv_to_rnn_dims, name='reshape')(inner)
-    inner = Dense(256, activation='relu', name='dense1')(inner)
+    # conv_to_rnn_dims = (input_shape[0] // 4, (input_shape[1] // 4) * 128)
+    # inner = Reshape(target_shape=conv_to_rnn_dims, name='reshape')(inner)
+    # inner = Dense(256, activation='relu', name='dense1')(inner)
 
     # RNN
-    m = Bidirectional(LSTM(512, return_sequences=True), name='blstm1')(inner)
-    m = Dense(512, name='blstm1_out', activation='linear')(m)
-    m = Bidirectional(LSTM(512, return_sequences=True), name='blstm2')(m)
+    m = Bidirectional(LSTM(256, return_sequences=True), name='blstm1')(m)
+    m = Dense(256, name='blstm1_out', activation='linear')(m)
+    m = Bidirectional(LSTM(256, return_sequences=True), name='blstm2')(m)
     y_pred = Dense(output_size, name='blstm2_out', activation='softmax')(m)
 
     basemodel = Model(inputs=input, outputs=y_pred)
     basemodel.summary()
 
-    labels = Input(name='the_labels', shape=[max_string_len], dtype='float32')
+    labels = Input(name='the_labels', shape=[None], dtype='float32')
     input_length = Input(name='input_length', shape=[1], dtype='int64')
     label_length = Input(name='label_length', shape=[1], dtype='int64')
     loss_out = Lambda(ctc_lambda_func, output_shape=(1,), name='ctc')([y_pred, labels, input_length, label_length])

@@ -2,19 +2,12 @@
 import os
 import math
 import itertools
-import tarfile
-import zipfile
-import json
 import random
-import re
 from PIL import Image, ImageDraw, ImageFont, ImageOps
 import numpy as np
 from scipy import ndimage
 from keras.callbacks import Callback
-from tensorflow.python.lib.io import file_io
-
-project_dir = os.path.split(os.path.realpath(__file__))[0]
-num_patten = re.compile(r'(^[0-9,]+$)')
+import crnn_config as cfg
 
 
 def speckle(img):
@@ -54,165 +47,156 @@ def decode_batch(test_func, word_batch, all_string_list):
     return ret
 
 
-# text paint extentions
-def prefix_extend(price_prefix, price_prefix_font_file, pre_surfix_fontsize, pre_pos_y, prefix_extention):
-    if price_prefix_font_file.endswith('Marukaku.otf') and price_prefix.find('各') > -1:
-        symbol = np.random.choice([u'\u02e8', u'\u02e9'])
-        price_prefix = price_prefix.replace('各', symbol)
-        pre_surfix_fontsize = pre_surfix_fontsize*2
-        pre_pos_y = pre_pos_y - pre_surfix_fontsize * random.random() * 0.4
-    price_prefix_font = ImageFont.truetype(price_prefix_font_file, int(pre_surfix_fontsize))
-    return price_prefix, price_prefix_font, pre_pos_y
+# fonts_dir = 'fonts'
+# bg_dir = 'bg'
+# char_dir = 'chars'
+# evl_dir = 'evl_data'
+# models_dir = 'chekcpoints'
+#
+#
+# class Config():
+#     def __init__(self, job_name, job_dir, train_datas, train_type):
+#         uni_chars_file = 'jpn.txt'
+#         # word_dict_file = 'jpn_word_dict.txt'
+#
+#         self.job_name = job_name
+#         self.job_dir = job_dir
+#         self.train_type = train_type  # 'train_by_fonts' 'train_by_images'
+#         # self.only_price = only_price == 1
+#
+#         # job_dir is gcs_path, copy files to local
+#         self.train_dir = os.path.abspath(job_dir)
+#         self.tran_datas_dir = os.path.join(self.train_dir, train_datas)
+#         self.job_output_path = os.path.join(self.train_dir, job_name)
+#
+#         # init train datas
+#         if train_type == 'train_by_fonts':
+#             # set font abs path
+#             fonts_dir_abs = os.path.join(self.tran_datas_dir, fonts_dir)
+#             char_dir_abs = os.path.join(self.tran_datas_dir, char_dir)
+#             bg_dir_abs = os.path.join(self.tran_datas_dir, bg_dir)
+#
+#             self.fonts_files = [os.path.join(fonts_dir_abs, fonts_item) for fonts_item in os.listdir(fonts_dir_abs)]
+#             self.uni_chars_file = os.path.join(char_dir_abs, uni_chars_file)
+#             self.bg_files = [os.path.join(bg_dir_abs, bg_item) for bg_item in os.listdir(bg_dir_abs)]
+#
+#         elif train_type == 'train_by_images':
+#             self.train_dir = job_dir
 
 
-fonts_dir = 'fonts'
-bg_dir = 'bg'
-char_dir = 'chars'
-evl_dir = 'evl_data'
-models_dir = 'chekcpoints'
+def random_crop_png(jpg_file, crop_range=(0.45, 0.99)):
+    image_data = Image.open(jpg_file)
+    crop_proportion = np.random.uniform(crop_range[0], crop_range[1], 2)
+    width = image_data.width*crop_proportion[0]
+    height = image_data.height*crop_proportion[1]
+
+    crop_origin_x = random.randint(0, int(image_data.width - width))
+    crop_origin_y = random.randint(0, int(image_data.height - height))
+
+    crop_box = (crop_origin_x,
+                crop_origin_y,
+                crop_origin_x + width,
+                crop_origin_y + height)
+    image = image_data.crop(crop_box).convert('RGB')
+    return image
 
 
-class Config():
-    def __init__(self, job_name, job_dir, train_datas, train_type):
-        uni_chars_file = 'jpn.txt'
-        # word_dict_file = 'jpn_word_dict.txt'
+def get_bg(w, h):
+    bg_file_abs = np.random.choice(cfg.bg_files)
+    img = random_crop_png(bg_file_abs)
+    img = img.resize((w, h))
+    return img
 
-        self.job_name = job_name
-        self.job_dir = job_dir
-        self.train_type = train_type  # 'train_by_fonts' 'train_by_images'
-        # self.only_price = only_price == 1
 
-        # job_dir is gcs_path, copy files to local
-        self.train_dir = os.path.abspath(job_dir)
-        self.tran_datas_dir = os.path.join(self.train_dir, train_datas)
-        self.job_output_path = os.path.join(self.train_dir, job_name)
+def paint_text(text, w, h):
+    use_bg = np.random.choice(range(0, 10)) > 4
+    if text is None or text == '':
+        surface = Image.new('RGB', (w, h), (255, 255, 255))
+        if use_bg:
+            surface = get_bg(w, h)
+    else:
+        text_len = len(text)
+        padding_size_w = np.random.choice(range(1, 6))
+        padding_size_h = np.random.choice(range(1, 6))
+        noise_w = np.random.choice(range(-10, 11))
+        noise_h = np.random.choice(range(-10, 11))
 
-        # init train datas
-        if train_type == 'train_by_fonts':
-            # set font abs path
-            fonts_dir_abs = os.path.join(self.tran_datas_dir, fonts_dir)
-            char_dir_abs = os.path.join(self.tran_datas_dir, char_dir)
-            bg_dir_abs = os.path.join(self.tran_datas_dir, bg_dir)
-
-            self.fonts_files = [os.path.join(fonts_dir_abs, fonts_item) for fonts_item in os.listdir(fonts_dir_abs)]
-            self.uni_chars_file = os.path.join(char_dir_abs, uni_chars_file)
-            self.bg_files = [os.path.join(bg_dir_abs, bg_item) for bg_item in os.listdir(bg_dir_abs)]
-
-        elif train_type == 'train_by_images':
-            self.train_dir = job_dir
-
-    def random_crop_png(self, jpg_file, crop_range=(0.45, 0.99)):
-        image_data = Image.open(jpg_file)
-        crop_proportion = np.random.uniform(crop_range[0], crop_range[1], 2)
-        width = image_data.width*crop_proportion[0]
-        height = image_data.height*crop_proportion[1]
-
-        crop_origin_x = random.randint(0, int(image_data.width - width))
-        crop_origin_y = random.randint(0, int(image_data.height - height))
-
-        crop_box = (crop_origin_x,
-                    crop_origin_y,
-                    crop_origin_x + width,
-                    crop_origin_y + height)
-        image = image_data.crop(crop_box).convert('RGB')
-        return image
-
-    def get_bg(self, w, h):
-        bg_file_abs = np.random.choice(self.bg_files)
-        img = self.random_crop_png(bg_file_abs)
-        img = img.resize((w, h))
-        return img
-
-    def paint_text(self, text, w, h):
-        use_bg = np.random.choice(range(0, 10)) > 4
-        if text is None or text == '':
-            surface = Image.new('RGB', (w, h), (255, 255, 255))
-            if use_bg:
-                surface = self.get_bg(w, h)
+        surface_w = w + noise_w
+        surface_h = h + noise_h
+        inner_w = surface_w - padding_size_w * 2
+        inner_h = surface_h - padding_size_h * 2
+        fontsize = min([math.floor(inner_w / text_len), inner_h])
+        fontsize = random.randint(min(fontsize, 16), max(fontsize, 16))
+        surface_w = text_len * fontsize - random.randint(0, int((fontsize * 0.6)))
+        surface_h = int(fontsize * (random.random() * 0.25 + 0.95))
+        surface = Image.new('RGB', (surface_w, surface_h), (255, 255, 255))
+        if use_bg:
+            surface = get_bg(
+                surface_w + np.random.choice([0, padding_size_w, padding_size_w * 2]),
+                surface_h + np.random.choice([0, padding_size_h, padding_size_h * 2]))
+            fill_color = (np.random.choice([0, 50, 100, 150, 200, 255]), 0, 0)
         else:
-            text_len = len(text)
-            padding_size_w = np.random.choice(range(1, 6))
-            padding_size_h = np.random.choice(range(1, 6))
-            noise_w = np.random.choice(range(-10, 11))
-            noise_h = np.random.choice(range(-10, 11))
+            fill_color = (np.random.choice([0, 50, 100, 150, 200, 255]), 0, 0)
 
-            surface_w = w + noise_w
-            surface_h = h + noise_h
-            inner_w = surface_w - padding_size_w * 2
-            inner_h = surface_h - padding_size_h * 2
-            fontsize = min([math.floor(inner_w / text_len), inner_h])
-            fontsize = random.randint(min(fontsize, 16), max(fontsize, 16))
-            surface_w = text_len * fontsize - random.randint(0, int((fontsize * 0.6)))
-            surface_h = int(fontsize * (random.random() * 0.25 + 0.95))
-            surface = Image.new('RGB', (surface_w, surface_h), (255, 255, 255))
-            if use_bg:
-                surface = self.get_bg(
-                    surface_w + np.random.choice([0, padding_size_w, padding_size_w * 2]),
-                    surface_h + np.random.choice([0, padding_size_h, padding_size_h * 2]))
-                fill_color = (np.random.choice([0, 50, 100, 150, 200, 255]), 0, 0)
-            else:
-                fill_color = (np.random.choice([0, 50, 100, 150, 200, 255]), 0, 0)
+        if fontsize > 80:
+            fontsize = np.random.choice([32, 46, 74, 80])
+            fontsize = random.randint(16, max(fontsize, 16))
+        font_file = np.random.choice(cfg.fonts_files)
+        font = ImageFont.truetype(font_file, int(fontsize))
+        # 在bg上贴字
+        draw_brush = ImageDraw.Draw(surface)
 
-            if fontsize > 80:
-                fontsize = np.random.choice([32, 46, 74, 80])
-                fontsize = random.randint(16, max(fontsize, 16))
-            font_file = np.random.choice(self.fonts_files)
-            font = ImageFont.truetype(font_file, int(fontsize))
-            # 在bg上贴字
-            draw_brush = ImageDraw.Draw(surface)
+        rect_w = fontsize * text_len
+        rect_h = fontsize
+        pos_x = math.floor((surface_w - rect_w) / 2)
+        pos_y = math.floor((surface_h - rect_h) / 2)
 
-            rect_w = fontsize * text_len
-            rect_h = fontsize
-            pos_x = math.floor((surface_w - rect_w) / 2)
-            pos_y = math.floor((surface_h - rect_h) / 2)
+        draw_shadow(draw_brush, pos_x, pos_y, text, font)
+        draw_brush.text((pos_x, pos_y), text, fill=fill_color, font=font)
 
-            draw_shadow(draw_brush, pos_x, pos_y, text, font)
-            draw_brush.text((pos_x, pos_y), text, fill=fill_color, font=font)
+    # 随机反色
+    if np.random.choice([True, False]):
+        surface = ImageOps.invert(surface)
 
-        # 随机反色
-        if np.random.choice([True, False]):
-            surface = ImageOps.invert(surface)
+    # 随机缩窄
+    rand_w = surface.size[0]
+    if np.random.choice([True, False, False]):
+        rang = [0.6, 1]
+        rand_w = int(surface.size[0] * (random.random() * (rang[1] - rang[0]) + rang[0]))
+        surface = surface.resize((rand_w, surface.size[1]), Image.ADAPTIVE)
 
-        # 随机缩窄
-        rand_w = surface.size[0]
-        if np.random.choice([True, False, False]):
-            rang = [0.6, 1]
-            rand_w = int(surface.size[0] * (random.random() * (rang[1] - rang[0]) + rang[0]))
-            surface = surface.resize((rand_w, surface.size[1]), Image.ADAPTIVE)
+    scale_w = w / surface.size[0]
+    scale_h = h / surface.size[1]
+    if scale_w > scale_h:
+        surface = surface.resize((int(surface.size[0] * scale_h), h), Image.ADAPTIVE)
+    else:
+        surface = surface.resize((w, int(surface.size[1] * scale_w)), Image.ADAPTIVE)
 
-        scale_w = w / surface.size[0]
-        scale_h = h / surface.size[1]
-        if scale_w > scale_h:
-            surface = surface.resize((int(surface.size[0] * scale_h), h), Image.ADAPTIVE)
-        else:
-            surface = surface.resize((w, int(surface.size[1] * scale_w)), Image.ADAPTIVE)
+    # 归一化
+    a = np.array(surface.convert('L'))
+    a = a.astype(np.float32) / 255
+    # a.shape=(h,w)
 
-        # 归一化
-        a = np.array(surface.convert('L'))
-        a = a.astype(np.float32) / 255
-        # a.shape=(h,w)
+    # 高斯滤波
+    if np.random.choice([True, False]):
+        a = speckle(a)
 
-        # 高斯滤波
-        if np.random.choice([True, False]):
-            a = speckle(a)
-
-        # 统一图片尺寸
-        result = np.ones((h, w))
-        pad_w = math.floor((w-surface.size[0]) / 2)
-        pad_h = math.floor((h-surface.size[1]) / 2)
-        result[pad_h: pad_h + surface.size[1], pad_w: pad_w + surface.size[0]] = a
-        return result
+    # 统一图片尺寸
+    result = np.ones((h, w))
+    pad_w = math.floor((w-surface.size[0]) / 2)
+    pad_h = math.floor((h-surface.size[1]) / 2)
+    result[pad_h: pad_h + surface.size[1], pad_w: pad_w + surface.size[0]] = a
+    return result
 
 
 class VizCallback(Callback):
-
-    def __init__(self, config, test_func, text_img_gen, all_string_list, num_display_words=6):
+    def __init__(self, test_func, text_img_gen, all_string_list, num_display_words=6):
         self.test_func = test_func
         self.best = np.Inf
-        self.job_dir = config.job_dir
-        self.job_name = config.job_name
-        self.models_dir = os.path.join(config.job_output_path, models_dir)
-        self.evl_dir = os.path.join(config.job_output_path, evl_dir)
+        self.job_dir = cfg.job_dir
+        self.job_name = cfg.job_name
+        self.models_dir = os.path.join(cfg.job_output_path, cfg.models_dir)
+        self.evl_dir = os.path.join(cfg.job_output_path, cfg.evl_dir)
         self.text_img_gen = text_img_gen
         self.num_display_words = num_display_words
         self.all_string_list = all_string_list
@@ -250,17 +234,6 @@ class VizCallback(Callback):
 
 if __name__ == '__main__':
     from text_recognize.data.generator import TextImageGenerator
-    job_name = 'job_random_jp'
-    job_dir = 'D:/GIT/purvar/ocr/text_recognize'
-    train_datas = 'data'
-    conf = 'train_by_fonts'
-    config = Config(job_name, job_dir, train_datas, conf)
-
-    # all_words_list = []
-    # with codecs.open(config.word_dict_file, 'r','utf-8') as f:
-    #     for line in f:
-    #         word = line.rstrip()
-    #         all_words_list.append(word)
 
     img_h = 64
     img_w = 512
@@ -271,8 +244,7 @@ if __name__ == '__main__':
 
     # Network parameters
     batch_size = 20
-    img_gen = TextImageGenerator(config=config,
-                                 batch_size=batch_size,
+    img_gen = TextImageGenerator(batch_size=batch_size,
                                  img_w=img_w,
                                  img_h=img_h,
                                  downsample_factor=downsample_factor,
@@ -284,13 +256,13 @@ if __name__ == '__main__':
     texts = []
     for i, word in enumerate(all_words_list):
         texts.append(word+'\n\r')
-        a = config.paint_text(word, 512, 64)
+        a = paint_text(word, 512, 64)
         # print(a.shape,a.T.shape,np.array([a.T,a.T,a.T]).T.shape)
         # img=Image.fromarray(np.array([a.T,a.T,a.T]).T)
         img = Image.fromarray(a * 255)
         img = img.convert('RGB')
         # print(str(i)+'test_paint.jpeg')
-        img.save(job_dir + '/data/temp/'+str(i) + 'test_paint.jpeg', 'jpeg')
+        img.save(cfg.job_dir + '/data/temp/'+str(i) + 'test_paint.jpeg', 'jpeg')
 
     with open('texts.txt', 'w', encoding="utf-8") as f:
         f.writelines(texts)
